@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backend Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .success {
+            color: green;
+            padding: 10px;
+            background: #d4edda;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            background: #f8d7da;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .result {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 Backend Connection Tester</h1>
+    
+    <div class="test-section">
+        <h2>1. Health Check (GET /api/ping)</h2>
+        <button onclick="testPing()">Test Ping</button>
+        <div id="pingResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. User Signup (POST /api/user/signup)</h2>
+        <button onclick="testSignup()">Test Signup</button>
+        <div id="signupResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. User Login (POST /api/user/login)</h2>
+        <button onclick="testLogin()">Test Login</button>
+        <div id="loginResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Get Profile (GET /api/user/profile)</h2>
+        <button onclick="testProfile()">Test Profile</button>
+        <div id="profileResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>5. Create Shipment (POST /api/shipments)</h2>
+        <button onclick="testCreateShipment()">Test Create Shipment</button>
+        <div id="shipmentResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>6. Get All Shipments (GET /api/shipments/all)</h2>
+        <button onclick="testGetShipments()">Test Get Shipments</button>
+        <div id="getShipmentsResult"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        
+        async function makeRequest(url, options = {}) {
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    }
+                });
+                const data = await response.json();
+                return { response, data, error: null };
+            } catch (error) {
+                return { response: null, data: null, error: error.message };
+            }
+        }
+
+        function showResult(elementId, success, message, data = null) {
+            const div = document.getElementById(elementId);
+            div.className = success ? 'success' : 'error';
+            div.innerHTML = `<strong>${success ? '✅ SUCCESS' : '❌ ERROR'}</strong><br>${message}`;
+            if (data) {
+                div.innerHTML += `<div class="result">${JSON.stringify(data, null, 2)}</div>`;
+            }
+        }
+
+        async function testPing() {
+            const { response, data, error } = await makeRequest(`${API_BASE}/ping`);
+            if (error) {
+                showResult('pingResult', false, `Error: ${error}`);
+            } else if (response.ok) {
+                showResult('pingResult', true, 'Backend is responding!', data);
+            } else {
+                showResult('pingResult', false, `Failed: ${response.status}`, data);
+            }
+        }
+
+        async function testSignup() {
+            const testUser = {
+                email: `test${Date.now()}@example.com`,
+                password: 'test123',
+                name: 'Test User'
+            };
+            
+            const { response, data, error } = await makeRequest(`${API_BASE}/user/signup`, {
+                method: 'POST',
+                body: JSON.stringify(testUser)
+            });
+            
+            if (error) {
+                showResult('signupResult', false, `Error: ${error}`);
+            } else if (response.ok) {
+                showResult('signupResult', true, 'User created successfully!', data);
+            } else {
+                showResult('signupResult', false, `Failed: ${response.status}`, data);
+            }
+        }
+
+        async function testLogin() {
+            const { response, data, error } = await makeRequest(`${API_BASE}/user/login`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    email: 'test@example.com',
+                    password: 'test123'
+                })
+            });
+            
+            if (error) {
+                showResult('loginResult', false, `Error: ${error}`);
+            } else if (response.ok) {
+                showResult('loginResult', true, 'Login successful! Session cookie set.', data);
+            } else {
+                showResult('loginResult', false, `Login failed. Create a user first or check credentials.`, data);
+            }
+        }
+
+        async function testProfile() {
+            const { response, data, error } = await makeRequest(`${API_BASE}/user/profile`);
+            
+            if (error) {
+                showResult('profileResult', false, `Error: ${error}`);
+            } else if (response.ok) {
+                showResult('profileResult', true, 'Profile retrieved! You are logged in.', data);
+            } else {
+                showResult('profileResult', false, `Not logged in. Login first.`, data);
+            }
+        }
+
+        async function testCreateShipment() {
+            const shipmentData = {
+                sender_name: 'John Doe',
+                sender_email: 'john@example.com',
+                sender_phone: '1234567890',
+                sender_address: '123 Main St, New York, NY 10001',
+                receiver_name: 'Jane Smith',
+                receiver_phone: '0987654321',
+                receiver_address: '456 Oak Ave, Los Angeles, CA 90001',
+                package_type: 'Box',
+                weight: 2.5,
+                shipment_cost: 25.99
+            };
+
+            const { response, data, error } = await makeRequest(`${API_BASE}/shipments`, {
+                method: 'POST',
+                body: JSON.stringify(shipmentData)
+            });
+            
+            if (error) {
+                showResult('shipmentResult', false, `Error: ${error}`);
+            } else if (response.ok) {
+                showResult('shipmentResult', true, `Shipment created! Tracking: ${data.tracking_number}`, data);
+            } else {
+                showResult('shipmentResult', false, `Failed: ${response.status}`, data);
+            }
+        }
+
+        async function testGetShipments() {
+            const { response, data, error } = await makeRequest(`${API_BASE}/shipments/all`);
+            
+            if (error) {
+                showResult('getShipmentsResult', false, `Error: ${error}`);
+            } else if (response.ok) {
+                showResult('getShipmentsResult', true, `Found ${data.shipments?.length || 0} shipments`, data);
+            } else {
+                showResult('getShipmentsResult', false, `Failed: ${response.status}`, data);
+            }
+        }
+
+        // Auto-test ping on load
+        window.onload = () => {
+            testPing();
+        };
+    </script>
+</body>
+</html>
+

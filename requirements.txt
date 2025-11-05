@@ -6,4 +6,6 @@ reportlab
 qrcode
 pillow
 python-dotenv
-sendgrid 
+sendgrid
+gunicorn
+psycopg2-binary 

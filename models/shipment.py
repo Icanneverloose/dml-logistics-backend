@@ -25,6 +25,8 @@ class Shipment(db.Model):
     status = db.Column(db.String(50), nullable=False, default='Registered')
     pdf_url = db.Column(db.String(200), nullable=True)
     qr_url = db.Column(db.String(200), nullable=True)
+    created_by = db.Column(db.String(100), nullable=True)  # User ID who created the shipment
+    created_by_email = db.Column(db.String(100), nullable=True)  # Email of creator for easier filtering
 
     # Relationship to status logs
     status_logs = db.relationship('StatusLog', backref='shipment', lazy=True) 

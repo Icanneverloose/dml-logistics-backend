@@ -1,0 +1,11 @@
+{
+  "4630542b-e41b-4463-85c2-cf288668a61a": {
+    "id": "4630542b-e41b-4463-85c2-cf288668a61a",
+    "email": "example@dml.com",
+    "name": "Jamy",
+    "status": "waiting_agent",
+    "createdAt": "2025-11-05T11:09:22.414452",
+    "updatedAt": "2025-11-05T11:09:24.500495",
+    "assignedAgent": null
+  }
+}

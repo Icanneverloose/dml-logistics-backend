@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from models.shipment import db, Shipment
 from models.status_log import StatusLog
+from utils.auth_utils import require_admin
 from datetime import datetime
 
 status_bp = Blueprint('status_bp', __name__)
@@ -18,6 +19,11 @@ ALLOWED_STATUSES = [
 
 @status_bp.route('/<tracking_number>/status', methods=['PUT'])
 def update_status(tracking_number):
+    # Require admin access to update shipment status
+    is_admin_user, _ = require_admin()
+    if not is_admin_user:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    
     data = request.get_json()
     status = data.get('status')
     location = data.get('location')

@@ -1,4 +1,8 @@
 from flask import Blueprint, request, jsonify, session
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.auth_utils import require_admin as check_admin
 from .content_utils import (
     load_content, 
     get_section, 
@@ -10,10 +14,9 @@ from .content_utils import (
 content_bp = Blueprint('content_bp', __name__)
 
 def require_admin():
-    """Check if user is admin (placeholder for now)"""
-    # For now, always allow access. You can implement proper admin check later
-    # return session.get("admin") == True
-    return True
+    """Check if user is admin"""
+    is_admin_user, _ = check_admin()
+    return is_admin_user
 
 @content_bp.route('/api/content', methods=['GET'])
 def get_all_content():

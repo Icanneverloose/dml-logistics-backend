@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
+            text-align: center;
+        }
+        .success {
+            color: #28a745;
+            margin-top: 10px;
+            text-align: center;
+        }
+        .signup-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .signup-link a {
+            color: #007bff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <h2>Login</h2>
+        <form onsubmit="login(event)">
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" required>
+            </div>
+            <button type="submit">Login</button>
+        </form>
+        <div id="message"></div>
+        <div class="signup-link">
+            Don't have an account? <a href="signup.html">Sign up here</a>
+        </div>
+    </div>
+
+    <script>
+        async function login(event) {
+            event.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            const messageDiv = document.getElementById('message');
+            
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/user/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    messageDiv.innerHTML = `<div class="success">✅ Login successful! Welcome, ${result.user.name}!</div>`;
+                    // Redirect to dashboard or home page after successful login
+                    setTimeout(() => {
+                        window.location.href = 'test-shipment.html';
+                    }, 2000);
+                } else {
+                    messageDiv.innerHTML = `<div class="error">❌ ${result.error}</div>`;
+                }
+            } catch (error) {
+                messageDiv.innerHTML = `<div class="error">❌ Unable to connect to server. Please make sure the server is running.</div>`;
+                console.error('Error:', error);
+            }
+        }
+    </script>
+</body>
+</html>
