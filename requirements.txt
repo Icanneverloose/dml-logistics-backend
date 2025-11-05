@@ -8,4 +8,5 @@ pillow
 python-dotenv
 sendgrid
 gunicorn
-psycopg2-binary 
+psycopg2-binary
+requests 
