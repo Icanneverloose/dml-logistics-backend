@@ -380,13 +380,20 @@ def update_shipment_status(identifier):
         # Handle CORS preflight request
         origin = request.headers.get('Origin')
         allowed_origins = [
-            'http://localhost:3000',
+            'https://dmllogisticsxpress.com',        # Your main domain
+            'https://www.dmllogisticsxpress.com',    # With www
+            'https://dmlmainlogistics.netlify.app',  # Netlify URL
+            'http://localhost:3000',                  # Local development
+            'http://localhost:5173',                  # Vite dev server
             'http://127.0.0.1:3000',
             'http://localhost:5000',
             'http://127.0.0.1:5000'
         ]
         
-        if origin in allowed_origins or origin is None:
+                # Also allow Netlify preview deployments (*.netlify.app)
+        is_netlify_preview = origin and '.netlify.app' in origin
+        
+        if origin in allowed_origins or is_netlify_preview or origin is None:
             response = jsonify({'ok': True})
             if origin:
                 response.headers.add('Access-Control-Allow-Origin', origin)
