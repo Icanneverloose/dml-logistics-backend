@@ -23,9 +23,12 @@ app = Flask(__name__)  # ✅ Corrected here
 # ✅ Secret key for sessions
 app.secret_key = os.environ.get('SECRET_KEY', 'your-super-secret-key-change-in-production')
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # ✅ Changed from 'Lax' to 'None' for cross-origin
-app.config['SESSION_COOKIE_SECURE'] = True      # ✅ Changed from False to True for HTTPS
-app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Required for cross-origin
+app.config['SESSION_COOKIE_SECURE'] = True      # Required for HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True    # Security
+app.config['SESSION_COOKIE_DOMAIN'] = None      # Allow cross-domain cookies
+app.config['SESSION_COOKIE_NAME'] = 'dml_session'  # Custom session name
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours session
 
 # ✅ Enable CORS for React frontend
 # Get frontend URL from environment variable or default to localhost
