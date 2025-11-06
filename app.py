@@ -30,15 +30,21 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 # ✅ Enable CORS for React frontend
 # Get frontend URL from environment variable or default to localhost
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
 CORS(app,
      supports_credentials=True,
      origins=[
-         "http://localhost:3000", 
-         "http://127.0.0.1:5000", 
-         "http://localhost:5000",
-         FRONTEND_URL  # Production frontend URL from environment
+         "https://dmllogisticsxpress.com",        # Your custom domain
+         "https://www.dmllogisticsxpress.com",    # With www subdomain
+         "https://dmlmainlogistics.netlify.app",  # Netlify default URL
+         "https://*.netlify.app",                  # Netlify preview deployments
+         "http://localhost:3000",                  # Local development
+         "http://localhost:5173",                  # Vite dev server
+         "http://localhost:5000",                  # Local backend
+         "http://127.0.0.1:5000",                  # Alternative localhost
+         FRONTEND_URL  # Environment variable fallback
      ],
-     allow_headers=["Content-Type", "Authorization"],
+     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
      methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 )
 
