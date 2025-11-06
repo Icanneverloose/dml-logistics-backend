@@ -9,4 +9,5 @@ python-dotenv
 sendgrid
 gunicorn
 psycopg2-binary
-requests 
+requests
+PyJWT==2.8.0 

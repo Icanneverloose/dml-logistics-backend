@@ -3,7 +3,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import uuid
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+import jwt
 
 user_bp = Blueprint('user_bp', __name__)
 
@@ -21,6 +22,52 @@ def load_users():
 def save_users(users):
     with open(USERS_FILE, 'w') as f:
         json.dump(users, f, indent=2)
+
+# ✅ Helper: Generate JWT token for mobile compatibility
+def generate_token(user_id, email):
+    """Generate JWT token for mobile authentication"""
+    try:
+        secret_key = os.environ.get('SECRET_KEY', 'your-super-secret-key-change-in-production')
+        payload = {
+            'user_id': user_id,
+            'email': email,
+            'exp': datetime.utcnow() + timedelta(days=7)
+        }
+        token = jwt.encode(payload, secret_key, algorithm='HS256')
+        return token
+    except Exception as e:
+        print(f"Error generating token: {e}")
+        return None
+
+# ✅ Helper: Verify JWT token
+def verify_token(token):
+    """Verify JWT token and return user_id"""
+    try:
+        secret_key = os.environ.get('SECRET_KEY', 'your-super-secret-key-change-in-production')
+        payload = jwt.decode(token, secret_key, algorithms=['HS256'])
+        return payload.get('user_id')
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+# ✅ Helper: Get user_id from session or token
+def get_user_id_from_request():
+    """Get user_id from session (desktop) or Authorization header (mobile)"""
+    # Try session first (for desktop compatibility)
+    user_id = session.get('user_id')
+    if user_id:
+        return user_id
+    
+    # Try Authorization header (for mobile)
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        user_id = verify_token(token)
+        if user_id:
+            return user_id
+    
+    return None
 
 # ✅ Sign Up Route (POST)
 @user_bp.route('/signup', methods=['POST', 'OPTIONS'])
@@ -56,12 +103,25 @@ def signup():
     users[user_id] = new_user
     save_users(users)
     
-    # Log in the user automatically
+    # Log in the user automatically (session for desktop)
     session['user_id'] = user_id
+    
+    # Generate token for mobile compatibility
+    token = generate_token(user_id, email)
     
     # Return user data without password
     user_response = {k: v for k, v in new_user.items() if k != 'password'}
-    return jsonify({'success': True, 'user': user_response, 'message': 'User registered successfully'}), 201
+    response_data = {
+        'success': True, 
+        'user': user_response, 
+        'message': 'User registered successfully'
+    }
+    
+    # Add token if generated successfully
+    if token:
+        response_data['token'] = token
+    
+    return jsonify(response_data), 201
 
 # ✅ Login Route (POST)
 @user_bp.route('/login', methods=['POST', 'OPTIONS'])
@@ -82,9 +142,19 @@ def login():
                 save_users(users)
             
             session['user_id'] = user_id
+            
+            # Generate token for mobile compatibility
+            token = generate_token(user_id, email)
+            
             # Return user data without password
             user_response = {k: v for k, v in user.items() if k != 'password'}
-            return jsonify({'success': True, 'user': user_response})
+            response_data = {'success': True, 'user': user_response}
+            
+            # Add token if generated successfully
+            if token:
+                response_data['token'] = token
+            
+            return jsonify(response_data)
     return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
 
 # ✅ Logout Route (POST)
@@ -98,7 +168,9 @@ def logout():
 # ✅ GET Profile Route
 @user_bp.route('/profile', methods=['GET'])
 def get_profile():
-    user_id = session.get('user_id')
+    # Get user_id from session or token (supports both desktop and mobile)
+    user_id = get_user_id_from_request()
+    
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
 
@@ -151,14 +223,23 @@ def is_admin(user_id):
     role = user.get('role', '').lower()
     return role in ['admin', 'super admin', 'manager']
 
+# Helper: Get user_id for admin endpoints (supports session and token)
+def get_admin_user_id():
+    """Get user_id from session or token and verify admin access"""
+    user_id = get_user_id_from_request()
+    if not user_id or not is_admin(user_id):
+        return None
+    return user_id
+
 # ✅ Admin: Get All Users
 @user_bp.route('/admin/users', methods=['GET', 'OPTIONS'])
 def get_admin_users():
     if request.method == 'OPTIONS':
         return jsonify({'ok': True}), 200
     
-    user_id = session.get('user_id')
-    if not user_id or not is_admin(user_id):
+    # Support both session and token authentication
+    user_id = get_admin_user_id()
+    if not user_id:
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
     
     try:
@@ -204,8 +285,9 @@ def create_admin_user():
     if request.method == 'OPTIONS':
         return jsonify({'ok': True}), 200
     
-    user_id = session.get('user_id')
-    if not user_id or not is_admin(user_id):
+    # Support both session and token authentication
+    user_id = get_admin_user_id()
+    if not user_id:
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
     
     try:
@@ -255,8 +337,9 @@ def update_admin_user(user_id_to_update):
     if request.method == 'OPTIONS':
         return jsonify({'ok': True}), 200
     
-    user_id = session.get('user_id')
-    if not user_id or not is_admin(user_id):
+    # Support both session and token authentication
+    user_id = get_admin_user_id()
+    if not user_id:
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
     
     try:
@@ -298,8 +381,9 @@ def delete_admin_user(user_id_to_delete):
     if request.method == 'OPTIONS':
         return jsonify({'ok': True}), 200
     
-    user_id = session.get('user_id')
-    if not user_id or not is_admin(user_id):
+    # Support both session and token authentication
+    user_id = get_admin_user_id()
+    if not user_id:
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
     
     try:

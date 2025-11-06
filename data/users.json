@@ -30,5 +30,13 @@
     "password": "pbkdf2:sha256:600000$MXqZZdMe4fZ0JPCJ$5fa2dc1cee245e3437d3f20ea62fedc067f0986f534fef20fd9fedc363843a85",
     "role": "user",
     "created_at": "2025-11-05 10:52:13.900278"
+  },
+  "2349ef86-2393-4848-8c89-3369c5bed083": {
+    "id": "2349ef86-2393-4848-8c89-3369c5bed083",
+    "email": "james@gmail.com",
+    "name": "John  Dos",
+    "password": "pbkdf2:sha256:600000$CIdgSjSzxWYiZUdl$1f1e43a81d97b3f56c88b14373d87f5dde218250153b08a71ba7e2bbbb0617ce",
+    "role": "user",
+    "created_at": "2025-11-06 19:12:45.279970"
   }
 }
