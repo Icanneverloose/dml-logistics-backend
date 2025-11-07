@@ -23,6 +23,7 @@ class Shipment(db.Model):
     date_registered = db.Column(db.DateTime, default=datetime.utcnow)
     estimated_delivery_date = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.String(50), nullable=False, default='Registered')
+    current_location = db.Column(db.String(200), nullable=True)  # Latest location from status updates
     pdf_url = db.Column(db.String(200), nullable=True)
     qr_url = db.Column(db.String(200), nullable=True)
     created_by = db.Column(db.String(100), nullable=True)  # User ID who created the shipment

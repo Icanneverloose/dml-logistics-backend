@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, session
 from models.shipment import db, Shipment
+from models.status_log import StatusLog
 from utils.pdf_generator import generate_pdf_receipt
 from utils.auth_utils import require_admin
 from datetime import datetime
@@ -373,97 +374,168 @@ def get_shipment_pdf(identifier):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# Update shipment status (separate endpoint for status updates) - MUST be before /<identifier> routes
-@shipment_bp.route('/<identifier>/status', methods=['PUT', 'PATCH', 'OPTIONS'])
-def update_shipment_status(identifier):
-    if request.method == 'OPTIONS':
-        # Handle CORS preflight request
-        origin = request.headers.get('Origin')
-        allowed_origins = [
-            'https://dmllogisticsxpress.com',        # Your main domain
-            'https://www.dmllogisticsxpress.com',    # With www
-            'https://dmlmainlogistics.netlify.app',  # Netlify URL
-            'http://localhost:3000',                  # Local development
-            'http://localhost:5173',                  # Vite dev server
-            'http://127.0.0.1:3000',
-            'http://localhost:5000',
-            'http://127.0.0.1:5000'
-        ]
-        
-                # Also allow Netlify preview deployments (*.netlify.app)
-        is_netlify_preview = origin and '.netlify.app' in origin
-        
-        if origin in allowed_origins or is_netlify_preview or origin is None:
-            response = jsonify({'ok': True})
-            if origin:
-                response.headers.add('Access-Control-Allow-Origin', origin)
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-            response.headers.add('Access-Control-Allow-Methods', 'PUT, PATCH, OPTIONS')
-            response.headers.add('Access-Control-Allow-Credentials', 'true')
-            response.headers.add('Access-Control-Max-Age', '3600')
-            return response, 200
-        else:
-            return jsonify({'error': 'Origin not allowed'}), 403
-    
-    # Require admin access
-    is_admin_user, user_info = require_admin()
-    if not is_admin_user:
-        return jsonify({'success': False, 'error': 'Admin access required'}), 403
-    
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({'success': False, 'error': 'No data provided'}), 400
-        
-        status = data.get('status')
-        if not status:
-            return jsonify({'success': False, 'error': 'Status is required'}), 400
-        
-        from sqlalchemy import text, inspect
-        
-        # Check if shipment exists (by tracking_number or ID)
-        result = db.session.execute(
-            text('SELECT id FROM shipments WHERE tracking_number = :identifier OR id = :identifier'),
-            {'identifier': identifier}
-        ).first()
-        
-        if not result:
-            return jsonify({'success': False, 'error': 'Shipment not found'}), 404
-        
-        # Update status
-        update_data = {'status': status, 'identifier': identifier}
-        update_query = 'UPDATE shipments SET status = :status WHERE tracking_number = :identifier OR id = :identifier'
-        
-        # Check if status_log column exists and add note if provided
-        inspector = inspect(db.engine)
-        db_columns = [col['name'] for col in inspector.get_columns('shipments')]
-        
-        if 'status_log' in db_columns and data.get('note'):
-            # Add status log entry (as JSON string)
-            import json
-            status_log = json.dumps([{
-                'status': status,
-                'timestamp': datetime.utcnow().isoformat(),
-                'location': data.get('location'),
-                'coordinates': data.get('coordinates'),
-                'note': data.get('note')
-            }])
-            update_data['status_log'] = status_log
-            update_query = 'UPDATE shipments SET status = :status, status_log = :status_log WHERE tracking_number = :identifier OR id = :identifier'
-        
-        db.session.execute(text(update_query), update_data)
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Status updated successfully'
-        })
-    except Exception as e:
-        db.session.rollback()
-        print(f"Error updating status: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+# ============================================================================
+# STATUS ROUTES - COMMENTED OUT: These routes are now handled by routes/status.py
+# status_bp is registered first in app.py, so it takes precedence
+# ============================================================================
+
+# # Get shipment status history - DUPLICATE: Now handled by routes/status.py
+# @shipment_bp.route('/<identifier>/status', methods=['GET', 'OPTIONS'])
+# def get_shipment_status_history(identifier):
+#     """Get status history for a shipment"""
+#     if request.method == 'OPTIONS':
+#         # Handle CORS preflight
+#         return jsonify({'ok': True}), 200
+#     
+#     try:
+#         # Find shipment by tracking_number or ID
+#         shipment = Shipment.query.filter(
+#             (Shipment.tracking_number == identifier) | (Shipment.id == identifier)
+#         ).first()
+#         
+#         if not shipment:
+#             return jsonify({'success': False, 'message': 'Shipment not found'}), 404
+#         
+#         # Get all status logs for this shipment, ordered by timestamp (oldest first)
+#         logs = StatusLog.query.filter_by(shipment_id=shipment.id).order_by(StatusLog.timestamp.asc()).all()
+#         history = []
+#         for log in logs:
+#             history.append({
+#                 'status': log.status,
+#                 'timestamp': log.timestamp.isoformat() if log.timestamp else None,
+#                 'location': log.location if log.location else None,
+#                 'coordinates': log.coordinates,
+#                 'note': log.note
+#             })
+#         
+#         print(f"GET status: Found {len(history)} status logs for shipment {identifier}")
+#         print(f"Shipment current_location: {shipment.current_location}")
+#         print(f"Last history entry location: {history[-1]['location'] if history else 'No history'}")
+#         
+#         return jsonify({
+#             'success': True, 
+#             'history': history,
+#             'current_location': shipment.current_location
+#         }), 200
+#     except Exception as e:
+#         print(f"Error getting status history: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         return jsonify({'success': False, 'error': str(e)}), 500
+
+# # Update shipment status - DUPLICATE: Now handled by routes/status.py
+# @shipment_bp.route('/<identifier>/status', methods=['PUT', 'PATCH', 'OPTIONS'])
+# def update_shipment_status(identifier):
+#     if request.method == 'OPTIONS':
+#         # Handle CORS preflight request
+#         origin = request.headers.get('Origin')
+#         allowed_origins = [
+#             'https://dmllogisticsxpress.com',        # Your main domain
+#             'https://www.dmllogisticsxpress.com',    # With www
+#             'https://dmlmainlogistics.netlify.app',  # Netlify URL
+#             'http://localhost:3000',                  # Local development
+#             'http://localhost:5173',                  # Vite dev server
+#             'http://127.0.0.1:3000',
+#             'http://localhost:5000',
+#             'http://127.0.0.1:5000'
+#         ]
+#         
+#         # Also allow Netlify preview deployments (*.netlify.app)
+#         is_netlify_preview = origin and '.netlify.app' in origin
+#         
+#         if origin in allowed_origins or is_netlify_preview or origin is None:
+#             response = jsonify({'ok': True})
+#             if origin:
+#                 response.headers.add('Access-Control-Allow-Origin', origin)
+#             response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+#             response.headers.add('Access-Control-Allow-Methods', 'PUT, PATCH, OPTIONS')
+#             response.headers.add('Access-Control-Allow-Credentials', 'true')
+#             response.headers.add('Access-Control-Max-Age', '3600')
+#             return response, 200
+#         else:
+#             return jsonify({'error': 'Origin not allowed'}), 403
+#     
+#     # Require admin access
+#     is_admin_user, user_info = require_admin()
+#     if not is_admin_user:
+#         return jsonify({'success': False, 'error': 'Admin access required'}), 403
+#     
+#     try:
+#         data = request.get_json()
+#         if not data:
+#             return jsonify({'success': False, 'error': 'No data provided'}), 400
+#         
+#         status = data.get('status')
+#         location = data.get('location')
+#         coordinates = data.get('coordinates')
+#         note = data.get('note')
+#         custom_timestamp = data.get('timestamp')
+#         
+#         if not status:
+#             return jsonify({'success': False, 'error': 'Status is required'}), 400
+#         
+#         # Validate location is provided
+#         if not location:
+#             return jsonify({'success': False, 'error': 'Location is required for status updates'}), 400
+#         
+#         # Find shipment by tracking_number or ID
+#         shipment = Shipment.query.filter(
+#             (Shipment.tracking_number == identifier) | (Shipment.id == identifier)
+#         ).first()
+#         
+#         if not shipment:
+#             return jsonify({'success': False, 'error': 'Shipment not found'}), 404
+#         
+#         # Parse custom timestamp if provided, otherwise use current time
+#         if custom_timestamp:
+#             try:
+#                 # Handle ISO format with or without timezone
+#                 if custom_timestamp.endswith('Z'):
+#                     custom_timestamp = custom_timestamp[:-1] + '+00:00'
+#                 
+#                 # Parse the timestamp
+#                 timestamp = datetime.fromisoformat(custom_timestamp)
+#                 
+#                 # Convert to UTC naive datetime if timezone-aware
+#                 if timestamp.tzinfo is not None:
+#                     timestamp = timestamp.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+#             except (ValueError, AttributeError) as e:
+#                 print(f"Error parsing timestamp: {e}, using current time")
+#                 timestamp = datetime.utcnow()
+#         else:
+#             timestamp = datetime.utcnow()
+#         
+#         # Create new status log entry
+#         status_log = StatusLog(
+#             shipment_id=shipment.id,
+#             status=status,
+#             timestamp=timestamp,
+#             location=location,
+#             coordinates=coordinates,
+#             note=note
+#         )
+#         db.session.add(status_log)
+#         
+#         # Update shipment status AND current_location
+#         shipment.status = status
+#         shipment.current_location = location
+#         
+#         db.session.commit()
+#         
+#         print(f"Status updated: {status} at {location} for shipment {identifier}")
+#         
+#         return jsonify({
+#             'success': True,
+#             'message': 'Status updated successfully',
+#             'status': status
+#         }), 200
+#         
+#     except Exception as e:
+#         db.session.rollback()
+#         print(f"Error updating status: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         return jsonify({'success': False, 'error': str(e)}), 500
 
 # Get single shipment by tracking number or ID
 @shipment_bp.route('/<identifier>', methods=['GET'])

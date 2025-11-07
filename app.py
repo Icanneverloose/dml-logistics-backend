@@ -64,9 +64,11 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
-# ✅ Register blueprints
-app.register_blueprint(shipment_bp, url_prefix='/api/shipments')
+# ✅ Register blueprints - status_bp first to avoid route conflicts
+# status_bp handles /<tracking_number>/status (GET and PUT)
+# shipment_bp handles other shipment routes
 app.register_blueprint(status_bp, url_prefix='/api/shipments')
+app.register_blueprint(shipment_bp, url_prefix='/api/shipments')
 app.register_blueprint(content_bp, url_prefix='/api/content')
 app.register_blueprint(user_bp, url_prefix='/api/user')
 app.register_blueprint(chat_bp, url_prefix='/api/chat')  # ✅ Chat routes
