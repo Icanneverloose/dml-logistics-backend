@@ -14,7 +14,16 @@ ALLOWED_STATUSES = [
     'Out for Delivery',
     'Delivered',
     'Delayed',
-    'Cancelled'
+    'Cancelled',
+    'Departed DML Regional Facility',
+    'Arrived at DML Regional Facility',
+    'Shipping Label Created',
+    'On Hold',
+    'Return to Sender',
+    'Held in Warehouse',
+    'Custom Hold',
+    'Custom Clearance Complete',
+    'Awaiting payment of Duties'
 ]
 
 @status_bp.route('/<tracking_number>/status', methods=['PUT'])
