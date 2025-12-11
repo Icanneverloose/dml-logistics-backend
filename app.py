@@ -41,8 +41,9 @@ CORS(app,
          "https://www.dmllogisticsxpress.com",    # With www subdomain
          "https://dmlmainlogistics.netlify.app",  # Netlify default URL
          "https://*.netlify.app",                  # Netlify preview deployments
-         "http://localhost:3000",                  # Local development
-         "http://localhost:5173",                  # Vite dev server
+        "http://localhost:3000",                  # Local development
+        "http://localhost:3001",                  # Local development (alternative port)
+        "http://localhost:5173",                  # Vite dev server
          "http://localhost:5000",                  # Local backend
          "http://127.0.0.1:5000",                  # Alternative localhost
          FRONTEND_URL  # Environment variable fallback
@@ -63,6 +64,14 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
+
+# ✅ Create database tables if they don't exist
+with app.app_context():
+    try:
+        db.create_all()
+        print("✅ Database tables initialized")
+    except Exception as e:
+        print(f"⚠️ Database initialization note: {e}")
 
 # ✅ Register blueprints - status_bp first to avoid route conflicts
 # status_bp handles /<tracking_number>/status (GET and PUT)
