@@ -442,48 +442,90 @@ def check_constraints():
     """Check foreign key constraints - diagnostic endpoint"""
     from sqlalchemy import text
     
-    # Removed admin requirement for diagnostic purposes
-    # This only reads database schema, not sensitive data
-    
     try:
-        query = text("""
-            SELECT 
-                tc.constraint_name, 
-                tc.table_name, 
-                kcu.column_name,
-                ccu.table_name AS foreign_table_name,
-                ccu.column_name AS foreign_column_name,
-                rc.delete_rule,
-                rc.update_rule
-            FROM information_schema.table_constraints AS tc 
-            JOIN information_schema.key_column_usage AS kcu
-              ON tc.constraint_name = kcu.constraint_name
-            JOIN information_schema.constraint_column_usage AS ccu
-              ON ccu.constraint_name = tc.constraint_name
-            JOIN information_schema.referential_constraints AS rc
-              ON rc.constraint_name = tc.constraint_name
-            WHERE tc.constraint_type = 'FOREIGN KEY' 
-              AND (tc.table_name = 'status_logs' OR tc.table_name = 'shipments')
-        """)
+        # Detect database type
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        is_postgres = 'postgresql' in db_uri.lower() or 'postgres' in db_uri.lower()
+        is_sqlite = 'sqlite' in db_uri.lower()
         
-        result = db.session.execute(query)
-        constraints = []
-        for row in result:
-            constraints.append({
-                'constraint_name': row[0],
-                'table_name': row[1],
-                'column_name': row[2],
-                'foreign_table_name': row[3],
-                'foreign_column_name': row[4],
-                'delete_rule': row[5],
-                'update_rule': row[6]
+        database_info = {
+            'database_uri_preview': db_uri.split('@')[-1] if '@' in db_uri else 'local/sqlite',
+            'database_type': 'PostgreSQL' if is_postgres else ('SQLite' if is_sqlite else 'Unknown'),
+            'env_database_url_set': bool(os.environ.get('DATABASE_URL'))
+        }
+        
+        if is_sqlite:
+            # SQLite doesn't have information_schema, use pragma instead
+            query = text("PRAGMA foreign_key_list(status_logs)")
+            result = db.session.execute(query)
+            constraints = []
+            for row in result:
+                # SQLite pragma returns: id, seq, table, from, to, on_update, on_delete, match
+                constraints.append({
+                    'constraint_name': f'fk_{row[2]}_{row[3]}',  # table_from
+                    'table_name': 'status_logs',
+                    'column_name': row[3],  # from column
+                    'foreign_table_name': row[2],  # referenced table
+                    'foreign_column_name': row[4],  # to column
+                    'delete_rule': row[6] if len(row) > 6 else 'NO ACTION',  # on_delete
+                    'update_rule': row[5] if len(row) > 5 else 'NO ACTION'  # on_update
+                })
+            
+            return jsonify({
+                'success': True,
+                'database_info': database_info,
+                'constraints': constraints,
+                'warning': '⚠️ You are using SQLite! SQLite files on Render are EPHEMERAL and reset on restart. This is why shipments disappear!',
+                'message': 'Switch to PostgreSQL to persist data. Check delete_rule - if it says CASCADE, that might also cause issues.'
             })
-        
-        return jsonify({
-            'success': True,
-            'constraints': constraints,
-            'message': 'Check delete_rule - if it says CASCADE, that might be causing automatic deletions'
-        })
+        elif is_postgres:
+            # PostgreSQL query
+            query = text("""
+                SELECT 
+                    tc.constraint_name, 
+                    tc.table_name, 
+                    kcu.column_name,
+                    ccu.table_name AS foreign_table_name,
+                    ccu.column_name AS foreign_column_name,
+                    rc.delete_rule,
+                    rc.update_rule
+                FROM information_schema.table_constraints AS tc 
+                JOIN information_schema.key_column_usage AS kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                JOIN information_schema.constraint_column_usage AS ccu
+                  ON ccu.constraint_name = tc.constraint_name
+                JOIN information_schema.referential_constraints AS rc
+                  ON rc.constraint_name = tc.constraint_name
+                WHERE tc.constraint_type = 'FOREIGN KEY' 
+                  AND (tc.table_name = 'status_logs' OR tc.table_name = 'shipments')
+            """)
+            
+            result = db.session.execute(query)
+            constraints = []
+            for row in result:
+                constraints.append({
+                    'constraint_name': row[0],
+                    'table_name': row[1],
+                    'column_name': row[2],
+                    'foreign_table_name': row[3],
+                    'foreign_column_name': row[4],
+                    'delete_rule': row[5],
+                    'update_rule': row[6]
+                })
+            
+            return jsonify({
+                'success': True,
+                'database_info': database_info,
+                'constraints': constraints,
+                'message': 'Check delete_rule - if it says CASCADE, that might be causing automatic deletions'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'database_info': database_info,
+                'error': 'Unknown database type'
+            })
+            
     except Exception as e:
         import traceback
         return jsonify({
