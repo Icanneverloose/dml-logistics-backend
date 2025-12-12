@@ -54,21 +54,33 @@ CORS(app,
 
 # ✅ Database configuration - support both SQLite (local) and PostgreSQL (Render)
 DATABASE_URL = os.environ.get('DATABASE_URL')
+print(f"🔍 DATABASE_URL from environment: {'SET' if DATABASE_URL else 'NOT SET'}")
 if DATABASE_URL:
+    print(f"🔍 DATABASE_URL value preview: {DATABASE_URL[:50]}...")  # Show first 50 chars for security
     # Check if it's a PostgreSQL URL (postgres:// or postgresql://)
     if DATABASE_URL.startswith('postgres://'):
         # SQLAlchemy needs postgresql:// not postgres://
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+        print("✅ Converted postgres:// to postgresql://")
     elif DATABASE_URL.startswith('postgresql://'):
         # Already in correct format
-        pass
+        print("✅ DATABASE_URL is already postgresql:// format")
     else:
         # If DATABASE_URL is set but doesn't start with postgres, use it anyway (might be custom format)
-        pass
+        print(f"⚠️ DATABASE_URL doesn't start with postgres:// or postgresql://, using anyway")
+    
+    # Add SSL mode if not present (Render PostgreSQL requires SSL)
+    if 'postgresql://' in DATABASE_URL and 'sslmode' not in DATABASE_URL:
+        separator = '&' if '?' in DATABASE_URL else '?'
+        DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
+        print("✅ Added sslmode=require to DATABASE_URL")
+    
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+    print(f"✅ Using PostgreSQL database")
 else:
     # Use SQLite for local development (only if DATABASE_URL is not set)
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+    print("⚠️ DATABASE_URL not set, using SQLite (data will be lost on restart!)")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
