@@ -65,13 +65,51 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
+# #region agent log
+import json
+import os
+import time
+def _debug_log(hypothesis_id, location, message, data=None):
+    try:
+        log_entry = {
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data or {},
+            "timestamp": time.time() * 1000
+        }
+        # Write to both file (local) and console (Render)
+        log_json = json.dumps(log_entry)
+        print(f"🔍 DEBUG [{hypothesis_id}]: {location} - {message} - {json.dumps(data) if data else '{}'}")
+        # Try file logging (works locally)
+        try:
+            log_path = os.path.join(os.path.dirname(__file__), '.cursor', 'debug.log')
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(log_json + '\n')
+        except: pass
+    except Exception as e:
+        print(f"DEBUG_LOG_ERROR: {e}")
+# #endregion
+
 # ✅ Create database tables if they don't exist
 with app.app_context():
     try:
+        # #region agent log
+        _debug_log("A", "app.py:71", "Database initialization start", {"db_uri": app.config.get('SQLALCHEMY_DATABASE_URI', 'unknown').split('@')[-1] if '@' in str(app.config.get('SQLALCHEMY_DATABASE_URI', '')) else 'local'})
+        # #endregion
         db.create_all()
         print("✅ Database tables initialized")
+        # #region agent log
+        _debug_log("A", "app.py:74", "Database tables created successfully")
+        # #endregion
     except Exception as e:
         print(f"⚠️ Database initialization note: {e}")
+        # #region agent log
+        _debug_log("A", "app.py:77", "Database initialization failed", {"error": str(e)})
+        # #endregion
 
 # ✅ Register blueprints - status_bp first to avoid route conflicts
 # status_bp handles /<tracking_number>/status (GET and PUT)
@@ -336,6 +374,67 @@ def test_admin_users():
 @app.route('/api/ping')
 def ping():
     return {'message': '✅ Backend is live and working!'}
+
+# ✅ Diagnostic endpoint to check database status
+@app.route('/api/diagnose', methods=['GET'])
+def diagnose():
+    """Diagnostic endpoint to check database status"""
+    from models.shipment import Shipment
+    from models.status_log import StatusLog
+    from sqlalchemy import text
+    import os
+    
+    diagnostics = {
+        'database_url_set': bool(os.environ.get('DATABASE_URL')),
+        'database_type': 'PostgreSQL' if os.environ.get('DATABASE_URL') else 'SQLite',
+        'shipments_count': 0,
+        'status_logs_count': 0,
+        'sample_tracking_numbers': [],
+        'recent_shipments': [],
+        'database_connection': 'unknown'
+    }
+    
+    try:
+        with app.app_context():
+            # Test database connection
+            try:
+                db.engine.connect()
+                diagnostics['database_connection'] = 'success'
+            except Exception as conn_error:
+                diagnostics['database_connection'] = f'failed: {str(conn_error)}'
+            
+            # Count shipments
+            result = db.session.execute(text('SELECT COUNT(*) FROM shipments'))
+            diagnostics['shipments_count'] = result.scalar() or 0
+            
+            # Count status logs
+            result = db.session.execute(text('SELECT COUNT(*) FROM status_logs'))
+            diagnostics['status_logs_count'] = result.scalar() or 0
+            
+            # Get sample tracking numbers
+            if diagnostics['shipments_count'] > 0:
+                result = db.session.execute(text('SELECT tracking_number FROM shipments LIMIT 10'))
+                diagnostics['sample_tracking_numbers'] = [row[0] for row in result.fetchall()]
+                
+                # Get recent shipments
+                result = db.session.execute(text('''
+                    SELECT tracking_number, status, date_registered 
+                    FROM shipments 
+                    ORDER BY date_registered DESC 
+                    LIMIT 5
+                '''))
+                for row in result.fetchall():
+                    diagnostics['recent_shipments'].append({
+                        'tracking_number': row[0],
+                        'status': row[1],
+                        'date_registered': str(row[2]) if row[2] else None
+                    })
+    except Exception as e:
+        diagnostics['error'] = str(e)
+        import traceback
+        diagnostics['traceback'] = traceback.format_exc()
+    
+    return jsonify(diagnostics)
 
 # ✅ Homepage (for Render)
 @app.route('/')

@@ -79,6 +79,13 @@ def signup():
     password = data.get('password')
     name = data.get('name')
     
+    # SECURITY: Explicitly ignore any 'role' field sent in the request
+    # Public signups should NEVER be able to set their own role
+    # Role is always set to 'user' for public signups
+    if 'role' in data:
+        print(f"⚠️ WARNING: Role field detected in signup request for {email}. Ignoring and setting to 'user'.")
+        del data['role']  # Remove role from data to prevent any accidental use
+    
     # Validate required fields
     if not email or not password or not name:
         return jsonify({'success': False, 'error': 'Email, password, and name are required'}), 400
@@ -90,15 +97,22 @@ def signup():
             return jsonify({'success': False, 'error': 'User with this email already exists'}), 409
     
     # Create new user
+    # SECURITY: All users signing up from the public signup page get 'user' role ONLY
+    # Role CANNOT be set via signup request - it's hardcoded to 'user'
+    # Only admins can change user roles later through the admin panel
     user_id = str(uuid.uuid4())
     new_user = {
         'id': user_id,
         'email': email,
         'name': name,
         'password': generate_password_hash(password),
-        'role': 'user',  # Default role is 'user', can be changed to 'admin'
+        'role': 'user',  # ALWAYS 'user' - hardcoded, cannot be overridden
         'created_at': str(datetime.utcnow())
     }
+    
+    # Double-check: Explicitly ensure role is 'user' (security measure)
+    # This prevents ANY possibility of setting a different role during signup
+    new_user['role'] = 'user'
     
     users[user_id] = new_user
     save_users(users)
@@ -110,7 +124,10 @@ def signup():
     token = generate_token(user_id, email)
     
     # Return user data without password
+    # Ensure role is explicitly 'user' in response (double-check)
     user_response = {k: v for k, v in new_user.items() if k != 'password'}
+    user_response['role'] = 'user'  # Explicitly set role to 'user' in response
+    
     response_data = {
         'success': True, 
         'user': user_response, 
@@ -120,6 +137,9 @@ def signup():
     # Add token if generated successfully
     if token:
         response_data['token'] = token
+    
+    # Debug logging
+    print(f"✅ New user created: {email} with role: {user_response.get('role')}")
     
     return jsonify(response_data), 201
 

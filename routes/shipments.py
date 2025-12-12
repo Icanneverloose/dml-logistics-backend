@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, current_app
 from models.shipment import db, Shipment
 from models.status_log import StatusLog
 from utils.pdf_generator import generate_pdf_receipt
@@ -7,6 +7,33 @@ from datetime import datetime
 import uuid
 import json
 import os
+
+# #region agent log
+import time
+def _debug_log(hypothesis_id, location, message, data=None):
+    try:
+        log_entry = {
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data or {},
+            "timestamp": time.time() * 1000
+        }
+        # Write to both file (local) and console (Render)
+        log_json = json.dumps(log_entry)
+        print(f"🔍 DEBUG [{hypothesis_id}]: {location} - {message} - {json.dumps(data) if data else '{}'}")
+        # Try file logging (works locally)
+        try:
+            log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.cursor', 'debug.log')
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(log_json + '\n')
+        except: pass
+    except Exception as e:
+        print(f"DEBUG_LOG_ERROR: {e}")
+# #endregion
 
 shipment_bp = Blueprint('shipment_bp', __name__)
 
@@ -35,13 +62,14 @@ def create_shipment():
         receiver_address = data.get('receiver_address')
         package_type = data.get('package_type')
         weight = data.get('weight')
+        # shipment_cost is optional - will default to 0.0 if not provided
         shipment_cost = data.get('shipment_cost')
         estimated_delivery_date = data.get('estimated_delivery_date')
 
-        # Validate required fields
+        # Validate required fields (shipment_cost is NOT in this list - it's optional)
         required_fields = ['sender_name', 'sender_email', 'sender_phone', 'sender_address', 
                           'receiver_name', 'receiver_phone', 'receiver_address', 'package_type', 
-                          'weight', 'shipment_cost']
+                          'weight']
         
         missing_fields = []
         for field in required_fields:
@@ -50,10 +78,38 @@ def create_shipment():
                 missing_fields.append(field)
         
         if missing_fields:
+            print(f"❌ Validation failed - Missing required fields: {missing_fields}")
+            print(f"📦 Received data keys: {list(data.keys())}")
             return jsonify({'success': False, 'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
 
-        # Generate a unique tracking number (simple example)
-        tracking_number = f'TRK{str(uuid.uuid4())[:8].upper()}'
+        # Allow custom tracking number or generate one
+        from sqlalchemy import text
+        tracking_number = data.get('tracking_number')
+        if not tracking_number:
+            # Generate a unique tracking number if not provided
+            tracking_number = f'TRK{str(uuid.uuid4())[:8].upper()}'
+            print(f"📦 Auto-generated tracking number: {tracking_number}")
+        else:
+            # Validate custom tracking number format (optional: add format validation)
+            tracking_number = str(tracking_number).strip().upper()
+            if not tracking_number:
+                return jsonify({
+                    'success': False, 
+                    'error': 'Tracking number cannot be empty'
+                }), 400
+            
+            # Check if tracking number already exists
+            existing = db.session.execute(
+                text('SELECT tracking_number FROM shipments WHERE tracking_number = :tn'),
+                {'tn': tracking_number}
+            ).first()
+            if existing:
+                return jsonify({
+                    'success': False, 
+                    'error': f'Tracking number {tracking_number} already exists'
+                }), 409
+            
+            print(f"📦 Using custom tracking number: {tracking_number}")
 
         # Convert estimated_delivery_date to datetime if provided
         est_delivery = None
@@ -104,6 +160,24 @@ def create_shipment():
             db_columns = []
         
         # Use raw SQL to insert only existing columns
+        # Handle optional shipment_cost - use 0.0 as default if not provided
+        # shipment_cost is OPTIONAL and should NOT be in required_fields validation
+        shipment_cost_value = 0.0  # Default value
+        if shipment_cost is not None:
+            if isinstance(shipment_cost, str):
+                if shipment_cost.strip() != '':
+                    try:
+                        shipment_cost_value = float(shipment_cost)
+                    except (ValueError, TypeError):
+                        shipment_cost_value = 0.0
+            else:
+                try:
+                    shipment_cost_value = float(shipment_cost)
+                except (ValueError, TypeError):
+                    shipment_cost_value = 0.0
+        
+        print(f"💰 Shipment cost handling: received={shipment_cost}, using={shipment_cost_value}")
+        
         insert_data = {
             'id': str(uuid.uuid4()),
             'tracking_number': tracking_number,
@@ -116,7 +190,7 @@ def create_shipment():
             'receiver_address': receiver_address,
             'package_type': package_type,
             'weight': weight,
-            'shipment_cost': shipment_cost,
+            'shipment_cost': shipment_cost_value,
             'status': 'Registered',
             'date_registered': datetime.utcnow()
         }
@@ -138,8 +212,51 @@ def create_shipment():
         print(f"Inserting with columns: {list(filtered_data.keys())}")
         
         sql = text(f'INSERT INTO shipments ({columns_str}) VALUES ({placeholders})')
+        # #region agent log
+        _debug_log("D", "routes/shipments.py:162", "Before INSERT execution", {"tracking_number": tracking_number, "columns": list(filtered_data.keys())})
+        # #endregion
         db.session.execute(sql, filtered_data)
-        db.session.commit()
+        # #region agent log
+        _debug_log("D", "routes/shipments.py:165", "After INSERT execution, before commit", {"tracking_number": tracking_number})
+        # #endregion
+        
+        # 🔍 ADD VERIFICATION BEFORE COMMIT
+        try:
+            db.session.commit()
+            # #region agent log
+            _debug_log("D", "routes/shipments.py:170", "Commit successful", {"tracking_number": tracking_number})
+            # #endregion
+            print(f"✅ COMMIT SUCCESSFUL for {tracking_number} at {datetime.utcnow()}")
+        except Exception as commit_error:
+            db.session.rollback()
+            # #region agent log
+            _debug_log("D", "routes/shipments.py:175", "Commit failed, rolled back", {"tracking_number": tracking_number, "error": str(commit_error)})
+            # #endregion
+            print(f"❌ COMMIT FAILED: {commit_error}")
+            raise Exception(f"Failed to save shipment to database: {commit_error}")
+        
+        # 🔍 VERIFY IT WAS SAVED
+        # #region agent log
+        _debug_log("B", "routes/shipments.py:181", "Verifying shipment exists after commit", {"tracking_number": tracking_number})
+        # #endregion
+        verify = db.session.execute(
+            text('SELECT tracking_number FROM shipments WHERE tracking_number = :tn'),
+            {'tn': tracking_number}
+        ).first()
+        
+        if not verify:
+            # #region agent log
+            _debug_log("B", "routes/shipments.py:188", "VERIFICATION FAILED - shipment not found after commit", {"tracking_number": tracking_number})
+            # #endregion
+            raise Exception(f"Shipment {tracking_number} was not saved to database!")
+        
+        # #region agent log
+        _debug_log("B", "routes/shipments.py:192", "Verification successful - shipment exists", {"tracking_number": tracking_number})
+        # #endregion
+        print(f"✅ VERIFIED: Shipment {tracking_number} exists in database")
+        db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'unknown')
+        db_info = db_uri.split('@')[-1] if '@' in str(db_uri) else 'local'
+        print(f"   Database: {db_info}")
         
         # Get the created shipment for PDF generation - use raw query
         result = db.session.execute(
@@ -168,7 +285,9 @@ def create_shipment():
         if hasattr(result, 'date_registered'):
             shipment.date_registered = result.date_registered
         
-        print(f"Shipment created successfully using raw SQL: {tracking_number}")
+        print(f"✅ SHIPMENT CREATED: {tracking_number} at {datetime.utcnow()}")
+        print(f"   Shipment ID: {shipment.id}")
+        print(f"   Status: {shipment.status}")
 
         # Generate PDF receipt and save the file path
         try:
@@ -201,9 +320,15 @@ def create_shipment():
 
 @shipment_bp.route('/all', methods=['GET'])
 def get_all_shipments():
+    # #region agent log
+    _debug_log("B", "routes/shipments.py:248", "get_all_shipments called", {"method": request.method, "path": request.path})
+    # #endregion
     # Require admin access to view all shipments
     is_admin_user, user_info = require_admin()
     if not is_admin_user:
+        # #region agent log
+        _debug_log("B", "routes/shipments.py:252", "Admin check failed", {"is_admin": False})
+        # #endregion
         return jsonify({'success': False, 'error': 'Admin access required'}), 403
     
     # Always use raw SQL to avoid ORM column issues - simplified, no role filtering
@@ -211,15 +336,31 @@ def get_all_shipments():
     from datetime import datetime
     
     try:
+        # #region agent log
+        _debug_log("B", "routes/shipments.py:260", "Executing SELECT * FROM shipments query")
+        # Also check count directly
+        count_result = db.session.execute(text('SELECT COUNT(*) FROM shipments'))
+        total_count = count_result.scalar() or 0
+        _debug_log("B", "routes/shipments.py:262", "Direct COUNT query result", {"total_shipments": total_count})
+        # #endregion
         # Use raw SQL to fetch all shipments
         result = db.session.execute(text('SELECT * FROM shipments'))
+        # #region agent log
+        # Get column names BEFORE fetchall() - critical fix for SQLAlchemy
+        column_names = list(result.keys()) if hasattr(result, 'keys') else []
+        _debug_log("B", "routes/shipments.py:322", "Got column names before fetchall", {"column_names": column_names, "column_count": len(column_names)})
+        # #endregion
         shipments_rows = result.fetchall()
+        # #region agent log
+        _debug_log("B", "routes/shipments.py:325", "Query executed", {"rows_count": len(shipments_rows) if shipments_rows else 0, "count_mismatch": total_count != len(shipments_rows) if shipments_rows else False, "has_column_names": len(column_names) > 0})
+        # #endregion
         
         # Convert rows to shipment-like dicts
         shipments = []
         if shipments_rows:
-            # Get column names from result
-            column_names = result.keys()
+            # #region agent log
+            _debug_log("B", "routes/shipments.py:330", "Processing shipment rows", {"total_rows": len(shipments_rows), "column_names": column_names})
+            # #endregion
             for row in shipments_rows:
                 shipment_dict = {}
                 # Handle both Row objects and tuples
@@ -234,6 +375,9 @@ def get_all_shipments():
                     for i, col_name in enumerate(column_names):
                         shipment_dict[col_name] = row[i] if i < len(row) else None
                 shipments.append(shipment_dict)
+                # #region agent log
+                _debug_log("B", "routes/shipments.py:281", "Processed shipment row", {"tracking_number": shipment_dict.get('tracking_number'), "id": shipment_dict.get('id')})
+                # #endregion
     except Exception as query_error:
         print(f"Query error: {query_error}")
         import traceback
@@ -266,6 +410,9 @@ def get_all_shipments():
         }
         
         shipment_list.append(shipment_dict)
+    # #region agent log
+    _debug_log("B", "routes/shipments.py:304", "Returning shipments list", {"count": len(shipment_list)})
+    # #endregion
     return jsonify({'shipments': shipment_list, 'success': True})
 
 # Generate/Download PDF (by tracking number or ID) - MUST be before /<identifier> routes
@@ -540,14 +687,27 @@ def get_shipment_pdf(identifier):
 # Get single shipment by tracking number or ID
 @shipment_bp.route('/<identifier>', methods=['GET'])
 def get_shipment(identifier):
+    # #region agent log
+    _debug_log("B", "routes/shipments.py:587", "get_shipment called", {"identifier": identifier, "method": request.method, "path": request.path})
+    # #endregion
     try:
         from sqlalchemy import text
+        # #region agent log
+        _debug_log("B", "routes/shipments.py:591", "Executing SELECT query for shipment", {"identifier": identifier})
+        # #endregion
         result = db.session.execute(
             text('SELECT * FROM shipments WHERE tracking_number = :identifier OR id = :identifier'),
             {'identifier': identifier}
         ).first()
         
+        # #region agent log
+        _debug_log("B", "routes/shipments.py:597", "Query result", {"found": result is not None, "identifier": identifier})
+        # #endregion
+        
         if not result:
+            # #region agent log
+            _debug_log("B", "routes/shipments.py:600", "Shipment not found - returning 404", {"identifier": identifier})
+            # #endregion
             return jsonify({'success': False, 'error': 'Shipment not found'}), 404
         
         # Convert to dict
@@ -598,6 +758,7 @@ def delete_shipment(identifier):
     
     try:
         from sqlalchemy import text
+        from datetime import datetime
         
         # Try to find by tracking_number first, then by ID
         result = db.session.execute(
@@ -609,13 +770,45 @@ def delete_shipment(identifier):
             return jsonify({'success': False, 'error': 'Shipment not found'}), 404
         
         tracking_num = result.tracking_number if hasattr(result, 'tracking_number') else (result[1] if len(result) > 1 else identifier)
+        shipment_id = result.id if hasattr(result, 'id') else (result[0] if len(result) > 0 else identifier)
+        
+        # 🔍 ADD COMPREHENSIVE LOGGING - Log who is deleting what
+        admin_email = user_info.get('email', 'unknown') if user_info else 'unknown'
+        admin_name = user_info.get('name', 'unknown') if user_info else 'unknown'
+        print(f"⚠️ DELETION ATTEMPT: User {admin_name} ({admin_email}) is deleting shipment {tracking_num} (ID: {shipment_id}) at {datetime.utcnow()}")
+        print(f"   Request from: {request.remote_addr}")
+        print(f"   User-Agent: {request.headers.get('User-Agent', 'unknown')}")
+        print(f"   Referer: {request.headers.get('Referer', 'unknown')}")
+        
+        # Count status logs before deletion
+        status_logs_count = db.session.execute(
+            text('SELECT COUNT(*) FROM status_logs WHERE shipment_id = :shipment_id'),
+            {'shipment_id': shipment_id}
+        ).scalar() or 0
+        
+        print(f"   Associated status logs: {status_logs_count}")
+        
+        # Delete status logs first to avoid foreign key issues
+        if status_logs_count > 0:
+            db.session.execute(
+                text('DELETE FROM status_logs WHERE shipment_id = :shipment_id'),
+                {'shipment_id': shipment_id}
+            )
+            print(f"   Deleted {status_logs_count} status logs")
         
         # Delete the shipment
         db.session.execute(
             text('DELETE FROM shipments WHERE tracking_number = :identifier OR id = :identifier'),
             {'identifier': identifier}
         )
-        db.session.commit()
+        
+        try:
+            db.session.commit()
+            print(f"✅ DELETION SUCCESSFUL: Shipment {tracking_num} deleted by {admin_email} at {datetime.utcnow()}")
+        except Exception as commit_error:
+            db.session.rollback()
+            print(f"❌ DELETION COMMIT FAILED: {commit_error}")
+            raise
         
         # Add CORS headers to response
         origin = request.headers.get('Origin')

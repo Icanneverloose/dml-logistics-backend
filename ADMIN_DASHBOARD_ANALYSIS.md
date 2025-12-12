@@ -648,3 +648,5 @@ The admin dashboard in `logistics-frontend` is a **well-structured WordPress-sty
 
 The dashboard provides a solid foundation for managing a logistics website's content, with room for expansion into advanced features like shipments and analytics.
 
+
+
