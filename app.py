@@ -54,12 +54,20 @@ CORS(app,
 
 # ✅ Database configuration - support both SQLite (local) and PostgreSQL (Render)
 DATABASE_URL = os.environ.get('DATABASE_URL')
-if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
-    # SQLAlchemy needs postgresql:// not postgres://
-    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+if DATABASE_URL:
+    # Check if it's a PostgreSQL URL (postgres:// or postgresql://)
+    if DATABASE_URL.startswith('postgres://'):
+        # SQLAlchemy needs postgresql:// not postgres://
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    elif DATABASE_URL.startswith('postgresql://'):
+        # Already in correct format
+        pass
+    else:
+        # If DATABASE_URL is set but doesn't start with postgres, use it anyway (might be custom format)
+        pass
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 else:
-    # Use SQLite for local development
+    # Use SQLite for local development (only if DATABASE_URL is not set)
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
