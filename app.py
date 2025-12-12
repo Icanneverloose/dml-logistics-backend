@@ -436,6 +436,65 @@ def diagnose():
     
     return jsonify(diagnostics)
 
+# ✅ Debug: Check Foreign Key Constraints
+@app.route('/api/debug/check-constraints', methods=['GET'])
+def check_constraints():
+    """Check foreign key constraints - diagnostic endpoint"""
+    from sqlalchemy import text
+    from utils.auth_utils import require_admin
+    
+    # Require admin access
+    is_admin_user, _ = require_admin()
+    if not is_admin_user:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    
+    try:
+        query = text("""
+            SELECT 
+                tc.constraint_name, 
+                tc.table_name, 
+                kcu.column_name,
+                ccu.table_name AS foreign_table_name,
+                ccu.column_name AS foreign_column_name,
+                rc.delete_rule,
+                rc.update_rule
+            FROM information_schema.table_constraints AS tc 
+            JOIN information_schema.key_column_usage AS kcu
+              ON tc.constraint_name = kcu.constraint_name
+            JOIN information_schema.constraint_column_usage AS ccu
+              ON ccu.constraint_name = tc.constraint_name
+            JOIN information_schema.referential_constraints AS rc
+              ON rc.constraint_name = tc.constraint_name
+            WHERE tc.constraint_type = 'FOREIGN KEY' 
+              AND (tc.table_name = 'status_logs' OR tc.table_name = 'shipments')
+        """)
+        
+        result = db.session.execute(query)
+        constraints = []
+        for row in result:
+            constraints.append({
+                'constraint_name': row[0],
+                'table_name': row[1],
+                'column_name': row[2],
+                'foreign_table_name': row[3],
+                'foreign_column_name': row[4],
+                'delete_rule': row[5],
+                'update_rule': row[6]
+            })
+        
+        return jsonify({
+            'success': True,
+            'constraints': constraints,
+            'message': 'Check delete_rule - if it says CASCADE, that might be causing automatic deletions'
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 # ✅ Homepage (for Render)
 @app.route('/')
 def home():
